@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from datasets import load_dataset  # noqa: E402
-from fe_engine import Ratio  # noqa: E402
+from fe_engine import Feat, Ratio, compute  # noqa: E402
 from grammars import auto_grammar  # noqa: E402
 from metrics import evaluate  # noqa: E402
 from pipeline import compute_splits, fit_lgb, final_eval, prepare, tune_lgb  # noqa: E402
@@ -58,6 +58,10 @@ def main() -> None:
     ap.add_argument("--screen_val", type=int, default=1500)
     ap.add_argument("--tag", default="")
     ap.add_argument("--cap", type=int, default=0, help="max features per family (0 = no cap)")
+    ap.add_argument("--screen_only", action="store_true", help="stop after choosing K (smoke tests)")
+    ap.add_argument("--select", default="global", choices=["global", "seg"],
+                    help="seg: rank features separately on repeat (seen user-item) and new candidates, "
+                         "then interleave the two rankings")
     a = ap.parse_args()
     tag = a.tag or a.grid
     ds, sp, cc = load_dataset(a.dataset)
@@ -82,11 +86,34 @@ def main() -> None:
     print(f"[E2-{tag}] screening matrix train {Xtr.shape} val {Xva.shape}  ({time.time() - t0:.0f}s)")
 
     # 2. importance screen
-    gain = np.zeros(len(names))
-    for s in range(3):
-        m = fit_lgb(Xtr, ytr, Xva, yva, {"feature_fraction": 0.3, "seed": s, "learning_rate": 0.08}, names)
-        gain += m.feature_importance("gain", iteration=m.best_iteration)
+    def screen(mtr: np.ndarray, mva: np.ndarray) -> np.ndarray:
+        g = np.zeros(len(names))
+        for s in range(3):
+            mm = fit_lgb(Xtr[mtr], ytr[mtr], Xva[mva], yva[mva],
+                         {"feature_fraction": 0.3, "seed": s, "learning_rate": 0.08}, names)
+            g += mm.feature_importance("gain", iteration=mm.best_iteration)
+        return g, mm
+
+    all_tr, all_va = np.ones(len(ytr), bool), np.ones(len(yva), bool)
+    gain, m = screen(all_tr, all_va)
     rank = np.argsort(-gain)
+    if a.select == "seg":
+        # repeat vs new candidates, decided by whether the user touched the item before the cutoff
+        labs = tuple(sorted(ds.events["label"].unique().to_list()))
+        sf = Feat(("user", "item"), labs, "age")
+        seen_tr = ~np.isnan(compute([sf], ds.events, c_tr)[sf.name].to_numpy())
+        seen_va = ~np.isnan(compute([sf], ds.events, c_va)[sf.name].to_numpy())
+        r_seen = np.argsort(-screen(seen_tr, seen_va)[0])
+        r_new = np.argsort(-screen(~seen_tr, ~seen_va)[0])
+        inter, used_i = [], set()
+        for x, y in zip(r_seen, r_new):
+            for i in (x, y):
+                if i not in used_i:
+                    used_i.add(i)
+                    inter.append(i)
+        rank = np.array(inter)
+        print(f"[E2-{tag}] segment screen: seen rows {seen_tr.mean():.2f} of train; "
+              f"top new-item features: {[names[i] for i in r_new[:5]]}")
     if a.cap > 0:
         # diversity: walk the importance ranking, keep at most `cap` features per family
         # (path x event set x aggregate kind); the order of the kept features is unchanged
@@ -118,6 +145,9 @@ def main() -> None:
     k_star = min(k for k, v in curve.items() if v >= best - 0.002)
     chosen = [names[i] for i in rank[:k_star]]
     print(f"[E2-{tag}] chose K={k_star}  ({time.time() - t0:.0f}s)")
+    if a.screen_only:
+        print(f"[E2-{tag}] chosen: {chosen}")
+        return
     del Xtr, Xva
 
     # 4. full computation of the chosen features + same tuning budget as E1
