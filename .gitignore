@@ -1,0 +1,8 @@
+.venv/
+data/
+cache/
+__pycache__/
+*.pyc
+.pytest_cache/
+experiments/runs/*/features*.parquet
+logs/
