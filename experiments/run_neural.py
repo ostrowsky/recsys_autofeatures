@@ -64,6 +64,7 @@ def main() -> None:
                          "learned_taus_hours": nr.model.log_tau.exp().detach().numpy().tolist(),
                          "seconds": time.time() - t0}}
     per_query_ndcg(P["c_test"], p_te, P["q_test"]).write_parquet(out_dir / "pq_E4_neural.parquet")
+    np.save(out_dir / "scores_E4_neural.npy", p_te)
     print("E4_neural", {k: (round(v, 4) if isinstance(v, float) else v) for k, v in res["E4_neural"].items()})
 
     if not a.no_hybrid:
@@ -76,7 +77,12 @@ def main() -> None:
             nr = NeuralRanker(hb, n_lab, n_bank, n_src, seed=10 + f)
             nr.fit(sub(parts["train"], fold != f), parts["val"], epochs=a.epochs, eval_fn=eval_val)
             oof[fold == f] = nr.predict(sub(parts["train"], fold == f))
-        e2 = json.loads((out_dir / "E2_full.json").read_text())
+        # the E2 variant for the hybrid is chosen on VAL, among the full-grid variants
+        cands = {p.stem: json.loads(p.read_text()) for p in out_dir.glob("E2_full*.json")}
+        e2_tag = max(cands, key=lambda k: cands[k]["val_ndcg@10"])
+        e2 = cands[e2_tag]
+        print(f"[E5] hybrid uses {e2_tag} (val ndcg@10 {e2['val_ndcg@10']:.4f})")
+        res_e2_tag = e2_tag
         by_name = {f.name: f for f in auto_grammar(ds.name, "full")}
         gram = [by_name[n] for n in e2["chosen"] if n in by_name]
         X = compute_splits(gram, ds, P)
@@ -86,9 +92,10 @@ def main() -> None:
         Xtr, Xva, Xte = (X[s].to_numpy() for s in ("train", "val", "test"))
         ytr, yva = P["c_train"]["y"].to_numpy(), P["c_val"]["y"].to_numpy()
         params, vnd = tune_lgb(Xtr, ytr, Xva, yva, P["c_val"], P["q_val"], n_trials=a.trials, names=fn)
-        met, pq, _ = final_eval(Xtr, ytr, Xva, yva, Xte, P["c_test"], P["q_test"], params, fn)
+        met, pq, sc = final_eval(Xtr, ytr, Xva, yva, Xte, P["c_test"], P["q_test"], params, fn)
         pq.write_parquet(out_dir / "pq_E5_hybrid.parquet")
-        res["E5_hybrid"] = {**met, "val_ndcg@10": vnd, "n_features": len(fn), "params": params,
+        np.save(out_dir / "scores_E5_hybrid.npy", sc)
+        res["E5_hybrid"] = {**met, "val_ndcg@10": vnd, "n_features": len(fn), "params": params, "e2_variant": res_e2_tag,
                             "seconds": time.time() - t0}
         print("E5_hybrid", {k: (round(v, 4) if isinstance(v, float) else v) for k, v in met.items()})
     (out_dir / "neural.json").write_text(json.dumps(res, indent=2))

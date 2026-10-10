@@ -47,6 +47,7 @@ def main() -> None:
     for name, s in (("E0_popularity_7d", pop), ("E0_history_recency", rec)):
         res[name] = evaluate(c_te, s, q_te)
         per_query_ndcg(c_te, s, q_te).write_parquet(out_dir / f"pq_{name}.parquet")
+        np.save(out_dir / f"scores_{name}.npy", s)
         print(name, {k: round(v, 4) for k, v in res[name].items()})
 
     # ---------------- E1: hand features + tuned LightGBM
@@ -58,7 +59,8 @@ def main() -> None:
     print(f"E1 features: {len(names)}  rows train {len(ytr):,} val {len(yva):,} test {Xte.shape[0]:,}  "
           f"({time.time() - t0:.0f}s)")
     best, val_ndcg = tune_lgb(Xtr, ytr, Xva, yva, P["c_val"], P["q_val"], n_trials=a.trials, names=names)
-    m, pq, _ = final_eval(Xtr, ytr, Xva, yva, Xte, c_te, q_te, best, names)
+    m, pq, sc = final_eval(Xtr, ytr, Xva, yva, Xte, c_te, q_te, best, names)
+    np.save(out_dir / "scores_E1_hand_lgb.npy", sc)
     res["E1_hand_lgb"] = {**m, "val_ndcg@10": val_ndcg, "n_features": len(names), "params": best}
     pq.write_parquet(out_dir / "pq_E1_hand_lgb.parquet")
     print("E1_hand_lgb", {k: (round(v, 4) if isinstance(v, float) else v) for k, v in res["E1_hand_lgb"].items()})

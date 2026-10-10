@@ -127,8 +127,9 @@ def main() -> None:
     Xtr, Xva, Xte = (X[s].to_numpy() for s in ("train", "val", "test"))
     ytr, yva = P["c_train"]["y"].to_numpy(), P["c_val"]["y"].to_numpy()
     params, val_ndcg = tune_lgb(Xtr, ytr, Xva, yva, P["c_val"], P["q_val"], n_trials=a.trials, names=fn)
-    met, pq, _ = final_eval(Xtr, ytr, Xva, yva, Xte, P["c_test"], P["q_test"], params, fn)
+    met, pq, sc = final_eval(Xtr, ytr, Xva, yva, Xte, P["c_test"], P["q_test"], params, fn)
     pq.write_parquet(out_dir / f"pq_E2_{tag}.parquet")
+    np.save(out_dir / f"scores_E2_{tag}.npy", sc)
     res = {**met, "val_ndcg@10": val_ndcg, "n_features": len(fn), "grammar_size": len(feats), "k_curve": curve,
            "k_star": k_star, "params": params, "chosen": chosen, "top_features": chosen[:40],
            "top_gain": [float(gain[i]) for i in rank[:40]], "sql_examples": [by_name[n].to_sql() for n in chosen[:5]

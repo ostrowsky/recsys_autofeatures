@@ -1,6 +1,7 @@
 """Shared training / evaluation helpers."""
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -22,8 +23,14 @@ BASE_PARAMS = dict(objective="binary", learning_rate=0.08, num_leaves=63, min_da
 
 
 def prepare(ds: Dataset, sp: Split, cc: CandidateCfg) -> dict:
-    d = CACHE / ds.name
+    # cache is keyed by the protocol config, so changing Split/CandidateCfg never reuses stale rows
+    cfg = repr(sp) + repr(cc)
+    d = CACHE / ds.name / hashlib.sha1(cfg.encode()).hexdigest()[:10]
+    legacy = CACHE / ds.name
+    if (legacy / "config.txt").exists() and (legacy / "config.txt").read_text() == cfg:
+        d = legacy
     d.mkdir(parents=True, exist_ok=True)
+    (d / "config.txt").write_text(cfg)
     out: dict = {}
     if (d / "cands_test.parquet").exists():
         for s in ("train", "val", "test"):

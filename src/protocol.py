@@ -31,6 +31,7 @@ class Split:
     n_test_queries: int = 15_000
     seed: int = 17
     target_min_label: int = 0   # events with label in [min, 2] define targets
+    target_organic_only: bool = False  # Yambda: targets only from user-initiated (organic) events
 
 
 @dataclass
@@ -74,8 +75,9 @@ def build_queries(ds: Dataset, sp: Split) -> dict[str, pl.DataFrame]:
     """Returns per split: qid,user,day,cutoff + targets as list[struct(item,rel)]."""
     ev = ds.events
     first_day = ev.group_by("user").agg(pl.col("day").min().alias("first_day"))
+    tev = ev.filter(pl.col("is_organic") == 1) if sp.target_organic_only else ev
     daily = (
-        ev.filter(pl.col("label").is_between(sp.target_min_label, 2))
+        tev.filter(pl.col("label").is_between(sp.target_min_label, 2))
         .group_by(["user", "day", "item"]).agg(pl.col("label").max().alias("lab"))
         .with_columns((pl.col("lab") + 1 - sp.target_min_label).cast(pl.Int8).alias("rel"))
     )
