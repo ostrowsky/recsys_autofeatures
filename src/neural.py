@@ -110,16 +110,19 @@ class KernelAttn(nn.Module):
         self.mlp = nn.Sequential(nn.Linear(n_in, 128), nn.ReLU(), nn.Dropout(0.1), nn.Linear(128, 64), nn.ReLU(),
                                  nn.Linear(64, 1))
 
-    def forward(self, h: dict, r: dict, bank: torch.Tensor, src: torch.Tensor) -> torch.Tensor:
-        mask, dt = h["mask"], h["dt"]
+    def forward(self, h: dict, qloc: torch.Tensor, r: dict, bank: torch.Tensor, src: torch.Tensor) -> torch.Tensor:
+        """h: per-QUERY history tensors (Q x L); qloc: row -> query index in h (B). History tokens are
+        embedded once per query and shared by all of that query's candidates."""
         q_parts = [self.item_emb(r["item"])] + [emb(r[k]) for emb, k in zip(self.attr_emb, r["attr_keys"])]
         q = self.q_proj(torch.cat(q_parts, -1))                                     # B x dq
-        tdt = torch.log1p(dt).unsqueeze(-1)
-        tfeat = torch.cat([tdt, tdt ** 2 / 10, torch.sin(dt.unsqueeze(-1) / 24 * 2 * math.pi),
-                           torch.cos(dt.unsqueeze(-1) / 24 * 2 * math.pi)], -1)
+        dtq = h["dt"]
+        tdt = torch.log1p(dtq).unsqueeze(-1)
+        tfeat = torch.cat([tdt, tdt ** 2 / 10, torch.sin(dtq.unsqueeze(-1) / 24 * 2 * math.pi),
+                           torch.cos(dtq.unsqueeze(-1) / 24 * 2 * math.pi)], -1)
         tok = torch.cat([self.item_emb(h["item"])] + [emb(h[k]) for emb, k in zip(self.attr_emb, r["attr_keys"])]
                         + [self.lab_emb(h["label"]), tfeat], -1)
-        k = self.tok_proj(tok)                                                      # B x L x dq
+        k = self.tok_proj(tok)[qloc]                                                # B x L x dq
+        mask, dt = h["mask"][qloc], dtq[qloc]
         qe = q.unsqueeze(1).expand_as(k)
         a = self.att(torch.cat([qe, k, qe * k, qe - k], -1)).squeeze(-1)
         a = a.masked_fill(mask == 0, -1e4)
@@ -128,9 +131,8 @@ class KernelAttn(nn.Module):
         # learned temporal kernels on exact relations
         tau = self.log_tau.exp()                                                    # M
         basis = torch.exp(-dt.unsqueeze(-1) / tau) * mask.unsqueeze(-1)             # B x L x M
-        rels = [(h["item"] == r["item"].unsqueeze(1))] + \
-               [(h[kk] == r[kk].unsqueeze(1)) & (r[kk].unsqueeze(1) > 0) for kk in r["attr_keys"]]
-        lab1h = F.one_hot(h["label"], self.n_labels).float()                        # B x L x E
+        rels = [(h["item"][qloc] == r["item"].unsqueeze(1))] +                [(h[kk][qloc] == r[kk].unsqueeze(1)) & (r[kk].unsqueeze(1) > 0) for kk in r["attr_keys"]]
+        lab1h = F.one_hot(h["label"][qloc], self.n_labels).float()                 # B x L x E
         s = []
         for ri, rel in enumerate(rels):
             per_lab = torch.einsum("blm,ble->bem", basis * rel.unsqueeze(-1).float(), lab1h)  # B x E x M
@@ -140,10 +142,16 @@ class KernelAttn(nn.Module):
         return self.mlp(x).squeeze(-1)
 
 
-def _batches(n: int, bs: int, rng: np.random.Generator | None):
-    idx = rng.permutation(n) if rng is not None else np.arange(n)
-    for i in range(0, n, bs):
-        yield idx[i:i + bs]
+def _batches(part: dict, rows_per_batch: int, rng: np.random.Generator | None):
+    """Batches of whole queries (rows of a query are contiguous: candidates are sorted by qid)."""
+    qidx = part["qidx"]
+    uq, start = np.unique(qidx, return_index=True)
+    end = np.r_[start[1:], len(qidx)]
+    order = rng.permutation(len(uq)) if rng is not None else np.arange(len(uq))
+    per = max(1, int(rows_per_batch / max(1.0, len(qidx) / max(1, len(uq)))))
+    for i in range(0, len(order), per):
+        sel = order[i:i + per]
+        yield np.concatenate([np.arange(start[j], end[j]) for j in sel])
 
 
 class NeuralRanker:
@@ -153,25 +161,25 @@ class NeuralRanker:
         self.model = KernelAttn(len(hb.item_vocab), [len(hb.attr_vocab[a]) for a in hb.attrs], n_labels, n_bank, n_src)
 
     def _tensors(self, part: dict, idx: np.ndarray):
-        qi = part["qidx"][idx]
-        h = {k: torch.from_numpy(v[qi]) for k, v in part["hist"].items()}
+        uq, qloc = np.unique(part["qidx"][idx], return_inverse=True)
+        h = {k: torch.from_numpy(v[uq]) for k, v in part["hist"].items()}
         r = {k: torch.from_numpy(v[idx]) for k, v in part["rows"].items()}
         r["attr_keys"] = self.hb.attrs
-        return h, r, torch.from_numpy(part["bank"][idx]), torch.from_numpy(part["src"][idx])
+        return (h, torch.from_numpy(qloc.astype(np.int64)), r, torch.from_numpy(part["bank"][idx]),
+                torch.from_numpy(part["src"][idx]))
 
     def fit(self, tr: dict, va: dict, epochs: int = 4, bs: int = 1024, lr: float = 2e-3, eval_fn=None):
         sparse = [p for n, p in self.model.named_parameters() if "_emb" in n and "lab_emb" not in n]
         dense = [p for n, p in self.model.named_parameters() if not ("_emb" in n and "lab_emb" not in n)]
         opts = [torch.optim.SparseAdam(sparse, lr=lr), torch.optim.Adam(dense, lr=lr, weight_decay=1e-6)]
         rng = np.random.default_rng(0)
-        best, best_state = -1.0, None
+        best, best_state = -math.inf, None
         for ep in range(epochs):
             self.model.train()
             t, tot = time.time(), 0.0
-            for idx in _batches(len(tr["y"]), bs, rng):
-                h, r, b, s = self._tensors(tr, idx)
+            for idx in _batches(tr, bs, rng):
                 y = torch.from_numpy(tr["y"][idx].astype(np.float32))
-                loss = F.binary_cross_entropy_with_logits(self.model(h, r, b, s), y)
+                loss = F.binary_cross_entropy_with_logits(self.model(*self._tensors(tr, idx)), y)
                 for o in opts:
                     o.zero_grad()
                 loss.backward()
@@ -189,10 +197,10 @@ class NeuralRanker:
     @torch.no_grad()
     def predict(self, part: dict, bs: int = 4096) -> np.ndarray:
         self.model.eval()
-        out = []
-        for idx in _batches(len(part["y"]), bs, None):
-            out.append(torch.sigmoid(self.model(*self._tensors(part, idx))).numpy())
-        return np.concatenate(out)
+        out = np.empty(len(part["y"]), dtype=np.float64)
+        for idx in _batches(part, bs, None):
+            out[idx] = torch.sigmoid(self.model(*self._tensors(part, idx))).numpy()
+        return out
 
 
 def make_part(hb: HistoryBuilder, events: pl.DataFrame, q: pl.DataFrame, c: pl.DataFrame, attrs: list[str],

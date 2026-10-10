@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from datasets import load_dataset  # noqa: E402
-from fe_engine import compute  # noqa: E402
+from fe_engine import Ratio  # noqa: E402
 from grammars import auto_grammar  # noqa: E402
 from metrics import evaluate  # noqa: E402
 from pipeline import compute_splits, fit_lgb, final_eval, prepare, tune_lgb  # noqa: E402
@@ -41,14 +41,23 @@ def subsample(c: pl.DataFrame, q: pl.DataFrame, n: int, seed: int) -> tuple[pl.D
     return c.filter(pl.col("qid").is_in(qs["qid"].implode())), qs
 
 
+def family(f, name: str) -> tuple:
+    if f is None:                    # candidate-source flags
+        return ("src", name)
+    if isinstance(f, Ratio):
+        return (f.kind, f.num.key, f.num.events, f.den.key, f.den.events)
+    return (f.key, f.events, f.agg)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("dataset")
     ap.add_argument("--grid", default="full")
     ap.add_argument("--trials", type=int, default=25)
-    ap.add_argument("--screen_train", type=int, default=4000)
-    ap.add_argument("--screen_val", type=int, default=2000)
+    ap.add_argument("--screen_train", type=int, default=2500)
+    ap.add_argument("--screen_val", type=int, default=1500)
     ap.add_argument("--tag", default="")
+    ap.add_argument("--cap", type=int, default=0, help="max features per family (0 = no cap)")
     a = ap.parse_args()
     tag = a.tag or a.grid
     ds, sp, cc = load_dataset(a.dataset)
@@ -78,6 +87,19 @@ def main() -> None:
         m = fit_lgb(Xtr, ytr, Xva, yva, {"feature_fraction": 0.3, "seed": s, "learning_rate": 0.08}, names)
         gain += m.feature_importance("gain", iteration=m.best_iteration)
     rank = np.argsort(-gain)
+    if a.cap > 0:
+        # diversity: walk the importance ranking, keep at most `cap` features per family
+        # (path x event set x aggregate kind); the order of the kept features is unchanged
+        used: dict = {}
+        kept = []
+        for i in rank:
+            fam = family(by_name.get(names[i]), names[i])
+            if used.get(fam, 0) < a.cap:
+                used[fam] = used.get(fam, 0) + 1
+                kept.append(i)
+        rank = np.array(kept)
+        print(f"[E2-{tag}] family cap {a.cap}: {len(rank)} of {len(names)} features eligible, "
+              f"{len(used)} families")
     m_all = evaluate(c_va, m.predict(Xva, num_iteration=m.best_iteration), q_va, ks=(10,))["ndcg@10"]
     print(f"[E2-{tag}] all-features val ndcg@10 {m_all:.4f}  ({time.time() - t0:.0f}s)")
 
