@@ -6,3 +6,4 @@ __pycache__/
 .pytest_cache/
 experiments/runs/*/features*.parquet
 logs/
+experiments/results/*/scores_*.npy

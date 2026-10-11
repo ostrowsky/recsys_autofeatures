@@ -275,10 +275,12 @@ LightGBM (фолды — смежные блоки дней train).
 ## 8. Как воспроизвести
 
 ```
-python -m venv .venv && .venv\Scripts\pip install -r requirements.lock.txt
-python src/rr_prep.py && python src/yambda_prep.py
+python -m venv .venv
+.venv\Scripts\pip install numpy pandas pyarrow polars duckdb lightgbm catboost optuna scikit-learn scipy matplotlib tqdm pytest
+.venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cpu   # точные версии: requirements.lock.txt
+python src/rr_prep.py && python src/yambda_prep.py   # данные: см. README, раздел Data
 python -m pytest tests
 sh run_rr_all.sh && sh run_rr_next.sh && sh run_rr_slices.sh
-sh run_yambda_all.sh && sh run_seg.sh
-python experiments/collect_results.py retailrocket   # и yambda
+sh run_yambda_all.sh && sh run_seg.sh && sh run_split.sh
+python experiments/make_figures.py
 ```

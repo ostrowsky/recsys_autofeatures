@@ -40,11 +40,28 @@ Query = (user, day d) with history before d; cutoff = start of d; features and c
 candidate rows for every method; ideal DCG counts all targets. Leakage tests in `tests/test_leakage.py`
 (engine vs brute force, future-mutation invariance, a canary leak that must be caught).
 
+## Data (not included in this repository)
+
+* **RetailRocket** — original source: Kaggle `retailrocket/ecommerce-dataset`. Put `events.csv`,
+  `category_tree.csv`, `item_properties_part1.csv`, `item_properties_part2.csv` into
+  `data/raw/retailrocket/`. (Our runs used an identical-size mirror on Hugging Face.)
+* **Yambda-50M** — Hugging Face `yandex/yambda`: `flat/50m/multi_event.parquet`,
+  `artist_item_mapping.parquet`, `album_item_mapping.parquet` into `data/raw/yambda/`.
+
+The datasets are distributed by their owners under their own terms; this repository contains only code
+and derived metrics.
+
 ## Reproduce
 
+Python 3.14, CPU only. Raw test-score arrays (`scores_*.npy`) are not versioned; `experiments/rescore.py`
+and the runners regenerate them.
+
 ```
-python -m venv .venv && .venv\Scripts\pip install -r requirements.lock.txt
-python src/rr_prep.py && python src/yambda_prep.py      # data: RetailRocket, Yambda-50M (HF yandex/yambda)
+python -m venv .venv
+.venv\Scripts\pip install numpy pandas pyarrow polars duckdb lightgbm catboost optuna scikit-learn scipy matplotlib tqdm pytest
+.venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cpu
+# exact versions used: requirements.lock.txt
+python src/rr_prep.py && python src/yambda_prep.py
 python -m pytest tests
 sh run_rr_all.sh && sh run_rr_next.sh && sh run_rr_slices.sh
 sh run_yambda_all.sh && sh run_seg.sh && sh run_split.sh
