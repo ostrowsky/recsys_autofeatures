@@ -1,54 +1,61 @@
 # Automatic feature generation for RecSys ranking
 
-> Status: work in progress (deadline 2026-10-25). Results tables are filled from
-> `experiments/results/*/*.json`; every number in this file is produced by a script in this repo.
+**Full report (Russian): [reports/REPORT.md](reports/REPORT.md).** Every number below comes from a
+script in this repository; per-dataset tables are in `experiments/results/<dataset>/`.
 
-## Idea in one paragraph
+## Idea
 
-Almost every hand-crafted RecSys feature has the same shape:
-**aggregate( events of type S, inside a time window or with time decay, grouped by a path from the
-candidate row to a set of past events )** — e.g. "number of purchases (S) in the last 7 days (window)
-by this user on items of this category (path user→item→category)". We write that shape down as a
-small **grammar**, enumerate it (≈1–2k features per dataset), compute every feature leak-free with a
-single as-of pass per (path, event-type) group, and let a model-based search pick the subset. The only
-dataset-specific input is the schema (which columns are item attributes, which label codes exist).
-"7 days or 10 days?" stops being a human decision: windows form a dense grid and time decay has a
-continuous half-life.
+Almost every hand-crafted RecSys feature has one shape:
+**aggregate( events of type S, in a time window or with time decay, grouped by a path from the
+candidate row to past events )** — "how many times did *this user* *buy* items of *this category* in
+the last *7 days*". We write that shape as a **grammar**, enumerate it (~1.7–1.9k features per dataset),
+compute every feature leak-free with one as-of pass per (path, event-set) group, and let model-based
+search choose the subset. The only dataset-specific input is the schema. Windows form a dense grid and
+decay has a continuous half-life, so "7 days or 10 days?" stops being a human decision.
 
-Second line: a neural ranker that **learns** the same aggregates (learnable exponential time kernels
-on exact user–item / user–attribute matches + target attention over the user's history), and a hybrid
-that feeds its score to the booster.
+## Results (test NDCG@10, paired bootstrap 95% CI vs the tuned hand-crafted baseline E1)
 
-## Protocol (fixed before any model was fitted)
+| | RetailRocket (e-commerce) | Yambda (music) |
+|---|---|---|
+| E0 user history by recency | 0.3134 | 0.1742 |
+| **E1 38/36 hand-crafted features + Optuna-tuned LightGBM** | **0.3281** | **0.2772** |
+| E2 grammar, windows 1/7/30 only | 0.3277 (−0.0004 [−0.0011, +0.0005]) | 0.2805 (+0.0033 [−0.0003, +0.0066]) |
+| **E2 grammar, full time grid** | 0.3281 (−0.0000 [−0.0010, +0.0009]) | **0.2885 (+0.0113 [+0.0069, +0.0157])** |
+| E2-split (primary by pre-declared "best val" rule) | 0.3279 (−0.0002 [−0.0013, +0.0010]) | 0.2853 (+0.0080 [+0.0035, +0.0122]) |
+| E4 neural ranker with learned time kernels | 0.3237 (−0.0044 [−0.0058, −0.0031]) | 0.2306 (−0.0466 [−0.0541, −0.0395]) |
 
-* Query = (user, day d) where the user is active on d and has history before d (warm users).
-* Cutoff = start of day d; all features and candidates use only events with `ts < cutoff`.
-* Targets = items the user interacts with on day d; graded relevance (view 1 / cart 2 / buy 3).
-* Split by day: train 28 d | val 14 d (feature selection, tuning, early stopping) | test 14 d (looked at once).
-* Same candidate rows for every method (history, co-visitation, category popularity, global popularity).
-  Metrics' ideal DCG / recall count **all** targets, including those the candidates missed.
-* Leakage tests (`tests/test_leakage.py`): engine == brute force; rewriting the future changes nothing;
-  a deliberately leaky canary is caught by the same check.
+* Yambda: every full-grid variant of the automatic pipeline beats the tuned hand-crafted booster;
+  most of the gain is the automatic choice of time scale (full grid vs 1/7/30: +0.0081 [+0.0041, +0.0122]).
+* RetailRocket: a tie, bounded by the candidate generator (repeats are solved by recency, new items have
+  10% candidate recall).
+* Weak spot found on both datasets: selection by overall NDCG favours repeat-item features and slightly
+  loses on items new to the user; segment-aware selection removes that loss at a cost on repeats.
 
-## Experiments
+![Difference to E1](reports/figures/fig_delta.png)
 
-| ID | Method |
-|----|--------|
-| E0 | popularity; user's own history by recency |
-| E1 | 34 hand-crafted features (windows 1/7/30 d) + LightGBM, Optuna-tuned |
-| E2 | grammar (full grid) + model-based selection, same tuning budget |
-| E2-coarse | ablation: same grammar with only 1/7/30-day windows, no decay |
-| E4 | neural ranker with learned temporal kernels + target attention |
-| E5 | hybrid: E2 features + out-of-fold E4 score in LightGBM |
+## Protocol
+
+Query = (user, day d) with history before d; cutoff = start of d; features and candidates use only
+`ts < cutoff`; split by day (train | val for all selection and tuning | test looked at once); identical
+candidate rows for every method; ideal DCG counts all targets. Leakage tests in `tests/test_leakage.py`
+(engine vs brute force, future-mutation invariance, a canary leak that must be caught).
 
 ## Reproduce
 
 ```
 python -m venv .venv && .venv\Scripts\pip install -r requirements.lock.txt
-python src/rr_prep.py && python src/yambda_prep.py
+python src/rr_prep.py && python src/yambda_prep.py      # data: RetailRocket, Yambda-50M (HF yandex/yambda)
 python -m pytest tests
-python experiments/run_baselines.py retailrocket
-python experiments/run_autofe.py retailrocket --grid full
-python experiments/run_autofe.py retailrocket --grid coarse
-python experiments/run_neural.py retailrocket
+sh run_rr_all.sh && sh run_rr_next.sh && sh run_rr_slices.sh
+sh run_yambda_all.sh && sh run_seg.sh && sh run_split.sh
+python experiments/make_figures.py
 ```
+
+| path | what |
+|---|---|
+| `src/fe_engine.py` | grammar, as-of computation, `to_sql()` |
+| `src/grammars.py` | per-dataset grammar from the schema only |
+| `src/protocol.py` | queries, split, candidate generator |
+| `src/hand_features.py` | E1 hand-crafted sets |
+| `src/neural.py` | E4 model |
+| `experiments/run_*.py` | E0–E5 runners; `slices.py`, `collect_results.py`, `make_figures.py` |
