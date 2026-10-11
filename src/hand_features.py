@@ -61,3 +61,27 @@ def hand_features_yambda() -> list:
 
 def hand_features(name: str) -> list:
     return {"retailrocket": hand_features_retailrocket, "yambda": hand_features_yambda}[name]()
+
+
+def hand_features_yambda_plus() -> list:
+    """E1+ (fixed before its result): the E1 music set plus what a music-domain engineer would add
+    after the first round -- long memory (60/90 d) on user x track / artist / album, track and artist
+    popularity over several horizons, skip rates of track and artist, user x track recency of likes.
+    Purpose: test whether E2's Yambda gain is just "longer windows a human would also try"."""
+    S, L, LK, POS, ALL = (0,), (1,), (2,), (1, 2), (0, 1, 2)
+    u, i, ar, al = ("user",), ("item",), ("artist",), ("album",)
+    ui, uar, ual = ("user", "item"), ("user", "artist"), ("user", "album")
+    return hand_features_yambda() + [
+        Feat(ui, L, "cnt", 60 * D), Feat(ui, L, "cnt", 90 * D), Feat(ui, POS, "cnt", 60 * D),
+        Feat(ui, LK, "cnt", 90 * D), Feat(ui, LK, "tsl"), Feat(ui, S, "cnt", 60 * D),
+        Ratio(Feat(ui, L, "cnt", 60 * D), Feat(u, L, "cnt", 60 * D), "share"),
+        Feat(uar, L, "cnt", 60 * D), Feat(uar, L, "cnt", 90 * D), Feat(uar, LK, "cnt", 90 * D),
+        Ratio(Feat(uar, L, "cnt", 60 * D), Feat(u, L, "cnt", 60 * D), "share"),
+        Feat(ual, L, "cnt", 60 * D), Feat(ual, L, "cnt", 7 * D),
+        Feat(u, L, "cnt", 60 * D), Feat(u, ALL, "age"),
+        Feat(i, L, "cnt", 60 * D), Feat(i, POS, "cnt", 3 * D), Feat(i, LK, "cnt", 60 * D),
+        Ratio(Feat(i, S, "cnt", 7 * D), Feat(i, L, "cnt", 7 * D), "conv"),
+        Feat(ar, L, "cnt", 1 * D), Feat(ar, L, "cnt", 60 * D), Feat(ar, LK, "cnt", 30 * D),
+        Ratio(Feat(ar, S, "cnt", 30 * D), Feat(ar, L, "cnt", 30 * D), "conv"),
+        Feat(al, L, "cnt", 7 * D),
+    ]
