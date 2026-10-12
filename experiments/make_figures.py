@@ -31,9 +31,9 @@ SURF, INK, INK2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
 HUE = {"retailrocket": "#2a78d6", "yambda": "#eb6834"}
 TITLE = {"retailrocket": "RetailRocket (e-commerce)", "yambda": "Yambda (music)"}
 OUT = ROOT / "reports" / "figures"
-ORDER = ["E2_coarse", "E2_full", "E2_full_div", "E2_full_seg", "E2_split", "E4_neural",
+ORDER = ["E1plus_hand_lgb", "E2_coarse", "E2_full", "E2_full_div", "E2_full_seg", "E2_split", "E4_neural",
          "E5_hybrid"]
-LABEL = {"E0_history_recency": "E0 history by recency", "E2_coarse": "E2 grammar, windows 1/7/30 only",
+LABEL = {"E1plus_hand_lgb": "E1+ hand-crafted + long windows (hint)", "E0_history_recency": "E0 history by recency", "E2_coarse": "E2 grammar, windows 1/7/30 only",
          "E2_full": "E2 grammar, full time grid", "E2_full_div": "E2 + family cap",
          "E2_full_seg": "E2 + segment-aware selection", "E2_split": "E2 split: model per segment",
          "E4_neural": "E4 neural, learned kernels", "E5_hybrid": "E5 hybrid E2 + E4"}
@@ -51,28 +51,36 @@ def style(ax):
 
 
 def fig_delta():
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2), facecolor=SURF, sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.6), facecolor=SURF, sharey=True)
+    base = {ds: ROOT / "experiments" / "results" / ds for ds in ("retailrocket", "yambda")}
+    shown = [m for m in ORDER if any((base[ds] / f"pq_{m}.parquet").exists() for ds in base)]
+    ypos = {m: i for i, m in enumerate(shown)}      # one fixed row per method in BOTH panels
     for ax, ds in zip(axes, ("retailrocket", "yambda")):
-        d = ROOT / "experiments" / "results" / ds
+        d = base[ds]
         ref = pl.read_parquet(d / "pq_E1_hand_lgb.parquet")
         rows = [(m, *paired_bootstrap(ref, pl.read_parquet(d / f"pq_{m}.parquet")))
-                for m in ORDER if (d / f"pq_{m}.parquet").exists()]
+                for m in shown if (d / f"pq_{m}.parquet").exists()]
         style(ax)
         ax.axvline(0, color=INK2, linewidth=1)
-        for y, (m, mean, lo, hi) in enumerate(rows):
+        for m, mean, lo, hi in rows:
+            y = ypos[m]
             sig = lo > 0 or hi < 0
             ax.plot([lo, hi], [y, y], color=HUE[ds], linewidth=2, solid_capstyle="round")
             ax.plot(mean, y, "o", markersize=8, color=HUE[ds] if sig else SURF, markeredgecolor=HUE[ds],
                     markeredgewidth=2)
             ax.annotate(f"{mean:+.4f}", (hi, y), xytext=(6, 0), textcoords="offset points", va="center",
                         fontsize=8.5, color=INK2)
-        ax.set_yticks(range(len(rows)))
-        ax.set_yticklabels([LABEL[r[0]] for r in rows], color=INK, fontsize=9)
-        ax.invert_yaxis()
+        for m in shown:
+            if m not in {r[0] for r in rows}:
+                ax.annotate("not run", (0, ypos[m]), xytext=(6, 0), textcoords="offset points", va="center",
+                            fontsize=8.5, color=INK2)
         ax.set_title(TITLE[ds], color=INK, fontsize=11, loc="left")
         ax.set_xlabel("test NDCG@10 minus E1 (hand-crafted + tuned LightGBM)", color=INK2, fontsize=9)
         lo_all = min(r[2] for r in rows)
         ax.set_xlim(max(lo_all * 1.15, -0.06), max(r[3] for r in rows) * 1.6 + 0.004)
+    axes[0].set_yticks(range(len(shown)))
+    axes[0].set_yticklabels([LABEL[m] for m in shown], color=INK, fontsize=9)
+    axes[0].invert_yaxis()
     fig.text(0.01, 0.01, "Bars: 95% paired bootstrap CI over test queries. Filled marker = CI excludes 0. "
              "E0 (history by recency) is off this scale: -0.015 RetailRocket, -0.103 Yambda.",
              color=INK2, fontsize=8.5)

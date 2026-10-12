@@ -21,7 +21,7 @@ def main(name: str) -> None:
     rows: dict[str, dict] = {}
     base = json.loads((d / "baselines.json").read_text())
     rows.update(base["results"])
-    for f in sorted(d.glob("E2_*.json")):
+    for f in sorted(d.glob("E1plus_*.json")) + sorted(d.glob("E2_*.json")):
         rows[f.stem] = json.loads(f.read_text())
     if (d / "neural.json").exists():
         rows.update(json.loads((d / "neural.json").read_text()))

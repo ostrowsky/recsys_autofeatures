@@ -20,12 +20,15 @@ decay has a continuous half-life, so "7 days or 10 days?" stops being a human de
 | E0 user history by recency | 0.3134 | 0.1742 |
 | **E1 38/36 hand-crafted features + Optuna-tuned LightGBM** | **0.3281** | **0.2772** |
 | E2 grammar, windows 1/7/30 only | 0.3277 (−0.0004 [−0.0011, +0.0005]) | 0.2805 (+0.0033 [−0.0003, +0.0066]) |
-| **E2 grammar, full time grid** | 0.3281 (−0.0000 [−0.0010, +0.0009]) | **0.2885 (+0.0113 [+0.0069, +0.0157])** |
-| E2-split (primary by pre-declared "best val" rule) | 0.3279 (−0.0002 [−0.0013, +0.0010]) | 0.2853 (+0.0080 [+0.0035, +0.0122]) |
+| E1+ hand-crafted + long windows, built *after* seeing E2's choice | — | 0.2810 (+0.0038 [+0.0002, +0.0075]) |
+| **E2 grammar, full time grid (primary, fixed before any result)** | 0.3281 (−0.0000 [−0.0010, +0.0009]) | **0.2885 (+0.0113 [+0.0069, +0.0157])**; vs E1+: +0.0075 [+0.0038, +0.0111] |
+| E2-split (exploratory, post-hoc) | 0.3279 (−0.0002 [−0.0013, +0.0010]) | 0.2853 (+0.0080 [+0.0035, +0.0122]) |
 | E4 neural ranker with learned time kernels | 0.3237 (−0.0044 [−0.0058, −0.0031]) | 0.2306 (−0.0466 [−0.0541, −0.0395]) |
 
 * Yambda: every full-grid variant of the automatic pipeline beats the tuned hand-crafted booster;
   most of the gain is the automatic choice of time scale (full grid vs 1/7/30: +0.0081 [+0.0041, +0.0122]).
+  A hand-crafted set strengthened with long windows (E1+, a baseline deliberately helped by hindsight)
+  closes about a third of the gap; the primary method still beats it.
 * RetailRocket: a tie, bounded by the candidate generator (repeats are solved by recency, new items have
   10% candidate recall).
 * Weak spot found on both datasets: selection by overall NDCG favours repeat-item features and slightly
