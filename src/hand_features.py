@@ -60,7 +60,7 @@ def hand_features_yambda() -> list:
 
 
 def hand_features(name: str) -> list:
-    return {"retailrocket": hand_features_retailrocket, "yambda": hand_features_yambda}[name]()
+    return {"retailrocket": hand_features_retailrocket, "yambda": hand_features_yambda}[name.split("_w")[0]]()
 
 
 def hand_features_yambda_plus() -> list:

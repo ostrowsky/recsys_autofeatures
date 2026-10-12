@@ -6,6 +6,7 @@ from fe_engine import D, HALF_LIVES, WINDOWS, grammar
 
 
 def schema(name: str) -> dict:
+    name = name.split("_w")[0]   # rolling-origin copies (yambda_w1 ...) share the schema
     if name == "retailrocket":
         attrs = ["cat", "parent", "root"]
         return dict(attrs=attrs, labels=[0, 1, 2], positive=[1, 2], base=[0])

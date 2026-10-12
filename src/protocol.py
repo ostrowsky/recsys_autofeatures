@@ -32,6 +32,7 @@ class Split:
     seed: int = 17
     target_min_label: int = 0   # events with label in [min, 2] define targets
     target_organic_only: bool = False  # Yambda: targets only from user-initiated (organic) events
+    test_end_offset_days: int = 0  # rolling-origin evaluation: shift the whole train|val|test block back
 
 
 @dataclass
@@ -64,7 +65,7 @@ class Dataset:
 
 
 def day_ranges(ds: Dataset, sp: Split) -> dict[str, tuple[int, int]]:
-    end = ds.n_days  # exclusive
+    end = ds.n_days - sp.test_end_offset_days  # exclusive
     te = (end - sp.test_days, end)
     va = (te[0] - sp.val_days, te[0])
     tr = (va[0] - sp.train_days, va[0])
