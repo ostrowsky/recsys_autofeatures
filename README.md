@@ -1,6 +1,6 @@
 # Automatic feature generation for RecSys ranking
 
-**Full report (Russian): [reports/REPORT.md](reports/REPORT.md).** Every number below comes from a
+**Full report (Russian): [reports/REPORT.md](reports/REPORT.md) · PDF: [reports/REPORT.pdf](reports/REPORT.pdf).** Every number below comes from a
 script in this repository; per-dataset tables are in `experiments/results/<dataset>/`.
 
 ## Idea
