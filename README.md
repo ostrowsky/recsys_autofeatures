@@ -29,6 +29,10 @@ decay has a continuous half-life, so "7 days or 10 days?" stops being a human de
   most of the gain is the automatic choice of time scale (full grid vs 1/7/30: +0.0081 [+0.0041, +0.0122]).
   A hand-crafted set strengthened with long windows (E1+, a baseline deliberately helped by hindsight)
   closes about a third of the gap; the primary method still beats it.
+* Robustness over time (pre-registered, pushed before running): the whole pipeline re-run from scratch on
+  three more Yambda test weeks — E2-full − E1 pooled **+0.0076 [+0.0051, +0.0100]**, positive in 3 of 3
+  weeks; vs E1+: +0.0028 [+0.0007, +0.0049]. Criterion met (`reports/prereg_rolling.md`,
+  `experiments/results/yambda_rolling.md`).
 * RetailRocket: a tie, bounded by the candidate generator (repeats are solved by recency, new items have
   10% candidate recall).
 * Weak spot found on both datasets: selection by overall NDCG favours repeat-item features and slightly

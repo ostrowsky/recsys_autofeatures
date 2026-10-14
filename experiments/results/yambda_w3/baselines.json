@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "n_queries_all": {
+      "train": 7595,
+      "val": 2251,
+      "test": 2604
+    },
+    "candidate_recall": {
+      "train": {
+        "recall_all_candidates": 0.410036697579406,
+        "recall_history": 0.3830829582226079,
+        "recall_covisit": 0.08966502160276225,
+        "recall_category_pop": 0.08879729558725166,
+        "recall_global_pop": 0.010376556935480955,
+        "cands_per_query": 117.637,
+        "targets_per_query": 9.2195
+      },
+      "val": {
+        "recall_all_candidates": 0.4206525022656329,
+        "recall_history": 0.3934649078642634,
+        "recall_covisit": 0.09691873930117813,
+        "recall_category_pop": 0.07929715033732757,
+        "recall_global_pop": 0.01319101802436814,
+        "cands_per_query": 126.529,
+        "targets_per_query": 9.931
+      },
+      "test": {
+        "recall_all_candidates": 0.42284599219453617,
+        "recall_history": 0.396314920444311,
+        "recall_covisit": 0.09730561392975083,
+        "recall_category_pop": 0.07880516361453017,
+        "recall_global_pop": 0.010282197538276795,
+        "cands_per_query": 129.63018433179724,
+        "targets_per_query": 10.233486943164362
+      }
+    }
+  },
+  "results": {
+    "E0_popularity_7d": {
+      "ndcg@10": 0.026289114436969255,
+      "recall@10": 0.03817768146685197,
+      "recall_cartbuy@10": 0.021125541125541124,
+      "ndcg@20": 0.05489192459522883,
+      "recall@20": 0.10527783043833606,
+      "recall_cartbuy@20": 0.04692949907235622,
+      "auc": 0.5598608435191901,
+      "base_rate": 0.03338102898177197
+    },
+    "E0_history_recency": {
+      "ndcg@10": 0.1858216408899107,
+      "recall@10": 0.21797097871406626,
+      "recall_cartbuy@10": 0.12728509585652442,
+      "ndcg@20": 0.20617269106892114,
+      "recall@20": 0.2722217511502156,
+      "recall_cartbuy@20": 0.15132343846629562,
+      "auc": 0.724568374681527,
+      "base_rate": 0.03338102898177197
+    },
+    "E1_hand_lgb": {
+      "ndcg@10": 0.287860863014204,
+      "recall@10": 0.31753940823641286,
+      "recall_cartbuy@10": 0.06570191713048856,
+      "ndcg@20": 0.30383278752222337,
+      "recall@20": 0.36609636529994527,
+      "recall_cartbuy@20": 0.10258503401360544,
+      "auc": 0.8654912636695917,
+      "logloss": 0.10912289648044406,
+      "base_rate": 0.03338102898177197,
+      "val_ndcg@10": 0.28702653869830336,
+      "n_features": 36,
+      "params": {
+        "learning_rate": 0.07014772269752327,
+        "num_leaves": 32,
+        "min_data_in_leaf": 43,
+        "feature_fraction": 0.8163458139233011,
+        "bagging_fraction": 0.7855005519085023,
+        "lambda_l2": 1.1041396182541898
+      }
+    }
+  }
+}
